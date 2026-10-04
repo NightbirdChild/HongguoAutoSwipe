@@ -123,6 +123,8 @@ class AutoSwipeService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        // 无障碍一连接就自动开始（省去手动点开始；悬浮球/主界面随时可暂停）
+        swipeOn = true
         handler.postDelayed(loop, 1000L)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(KEY_OVERLAY_WANTED, true)) {
@@ -137,6 +139,9 @@ class AutoSwipeService : AccessibilityService() {
                     ).show()
                 }
             }
+        }
+        handler.post {
+            Toast.makeText(this, "已自动开始跳广告，点悬浮球 ⏸ 可暂停", Toast.LENGTH_SHORT).show()
         }
         Log.i(TAG, "service connected")
     }
@@ -203,6 +208,8 @@ class AutoSwipeService : AccessibilityService() {
             val adWaitOn = prefs.getBoolean(KEY_AD_WAIT, true)
             val hadCountdown = countdownSeenLastTick
             when {
+                // 倒计时中：先等待（提示可能提前出现，避免无效的提前上滑）
+                adWaitOn && scan.adSeconds != null -> Unit
                 // 真广告结束：提示 + 广告标识/刚见过倒计时，且不在（可见的）剧集页
                 scan.promptReady && promptArmed && (scan.adLabel || hadCountdown) &&
                     !scan.dramaMarker -> {
@@ -218,7 +225,6 @@ class AutoSwipeService : AccessibilityService() {
                 hadCountdown && scan.adSeconds == null &&
                     scan.adLabel && !scan.dramaMarker ->
                     swipeAndSchedule()
-                adWaitOn && scan.adSeconds != null -> Unit   // 倒计时中：等待
                 else -> Unit                                 // 剧集连播中：不干预
             }
             if (!scan.promptReady || scan.dramaMarker || scan.adSeconds != null) {
@@ -292,7 +298,8 @@ class AutoSwipeService : AccessibilityService() {
     /** 诊断：把当前读屏结果以弹窗输出，便于远程定位识别问题 */
     fun diagnose() {
         val scan = scanScreen()
-        val msg = "提示:${if (scan.promptReady) "有" else "无"} " +
+        val msg = "运行:${if (swipeOn) "是" else "否"} " +
+            "提示:${if (scan.promptReady) "有" else "无"} " +
             "广告标识:${if (scan.adLabel) "有" else "无"} " +
             "倒计时:${scan.adSeconds?.toString() ?: "无"} " +
             "剧集页:${if (scan.dramaMarker) "是" else "否"} " +
