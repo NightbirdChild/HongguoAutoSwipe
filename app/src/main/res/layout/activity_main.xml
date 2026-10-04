@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true">
@@ -74,6 +75,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:checked="true"
+            app:showText="false"
             android:text="@string/switch_ad_wait" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
@@ -82,6 +84,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:checked="true"
+            app:showText="false"
             android:text="@string/switch_only_target" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
@@ -90,6 +93,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:checked="true"
+            app:showText="false"
             android:text="@string/switch_jitter" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
@@ -97,6 +101,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
+            app:showText="false"
             android:text="@string/switch_overlay" />
 
         <Button

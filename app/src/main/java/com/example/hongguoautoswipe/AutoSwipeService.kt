@@ -1,6 +1,7 @@
 package com.example.hongguoautoswipe
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -15,7 +16,6 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.accessibilityservice.GestureDescription
 import android.widget.Button
 import android.widget.Toast
 import kotlin.math.abs
