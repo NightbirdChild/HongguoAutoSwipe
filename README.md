@@ -1,0 +1,2 @@
+# HongguoAutoSwipe
+HongguoAuto
