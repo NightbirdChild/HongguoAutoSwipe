@@ -85,6 +85,7 @@ class AutoSwipeService : AccessibilityService() {
     private var lastScrollAt = 0L
     private var nextSwipeAt = 0L
     private var countdownSeenLastTick = false // 上一秒是否见到“N秒后可继续上滑”倒计时
+    private var lastPromptToastAt = 0L        // 调试反馈节流：提示“检测到可跳过广告”
 
     private var windowManager: WindowManager? = null
     private var overlayButton: Button? = null
@@ -190,15 +191,23 @@ class AutoSwipeService : AccessibilityService() {
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
             // 智能跳广告：只对广告出手，剧集连播完全不干预。
-            // 主信号：“上滑继续观看短剧/剧集”提示（横竖屏广告可划走时都会出现）。
-            // 单一“广告”文字不再单独触发——弹幕可能含同样文字，必须组合信号。
+            // 主信号：“上滑继续观看短剧/剧集”提示（广告专属文案，剧集页不会出现）。
+            // 注意：广告弹出时底层剧集视图可能仍残留在节点树里，所以主信号
+            // 不做“不在剧集页”否决；“剧集页”判定只用于兜底规则与防误触。
             val scan = scanScreen()
             val adWaitOn = prefs.getBoolean(KEY_AD_WAIT, true)
             val hadCountdown = countdownSeenLastTick
             when {
-                // 主信号：可划走提示已出现，且不在剧集页
-                scan.promptReady && !scan.dramaMarker -> swipeAndSchedule()
-                // 兜底信号：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在
+                // 主信号：可划走提示已出现（实测剧集页无此文案）
+                scan.promptReady -> {
+                    val now = System.currentTimeMillis()
+                    if (now - lastPromptToastAt > 8000) {
+                        lastPromptToastAt = now
+                        Toast.makeText(this, "检测到可跳过广告", Toast.LENGTH_SHORT).show()
+                    }
+                    swipeAndSchedule()
+                }
+                // 兜底信号：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在，不在剧集页
                 hadCountdown && scan.adSeconds == null &&
                     scan.adLabel && !scan.dramaMarker ->
                     swipeAndSchedule()
@@ -245,7 +254,8 @@ class AutoSwipeService : AccessibilityService() {
                         ?.coerceIn(0, 120) ?: 2
                 }
                 if (!res.adLabel && text.contains(AD_LABEL_TEXT)) res.adLabel = true
-                if (!res.dramaMarker &&
+                // 剧集页标识只统计“可见”节点：广告弹出时被盖住的底层剧集视图不算数
+                if (!res.dramaMarker && node.isVisibleToUser &&
                     (text.contains(DRAMA_MARKER_1) || EPISODE_REGEX.containsMatchIn(text))
                 ) res.dramaMarker = true
             }
