@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">红果自动翻页</string>
+    <string name="service_label">红果自动翻页</string>
+    <string name="service_desc">当目标应用（红果短剧）在前台时，按设定间隔自动上滑切换下一个视频。仅供个人便利使用，请遵守相关应用的使用规则。</string>
+    <string name="btn_accessibility">① 开启无障碍服务</string>
+    <string name="btn_start">开始自动翻页</string>
+    <string name="btn_test">测试一次上滑</string>
+    <string name="hint_interval">翻页间隔（秒，2~600）</string>
+    <string name="hint_package">目标应用包名（红果国内版）</string>
+    <string name="switch_only_target">仅当目标应用在前台时才翻页</string>
+    <string name="switch_jitter">间隔加一点随机浮动（更自然）</string>
+    <string name="switch_overlay">显示悬浮球（点击开始/停止，长按隐藏）</string>
+    <string name="usage_hint">使用方法：① 开启无障碍服务 → ② 显示悬浮球 → ③ 打开红果短剧，进入竖屏播放页，点击悬浮球 ▶ 开始自动翻页（⏸ 停止）。默认每 20 秒上滑一次，可在上方修改间隔。红果海外版请把包名改为 com.phoenix.read.oversea.gp。</string>
+    <string name="disclaimer">本应用仅通过系统无障碍服务模拟手势，不修改、不破解任何应用。自动化操作第三方应用可能违反其用户协议，由此产生的风险请自行评估；请勿用于刷量等违反平台规则的用途。</string>
+</resources>
