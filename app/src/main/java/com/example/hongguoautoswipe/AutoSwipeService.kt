@@ -61,7 +61,7 @@ class AutoSwipeService : AccessibilityService() {
         private val EPISODE_REGEX = Regex("第\\d+集|全\\d+集")
 
         /** 智能跳广告模式下两次上滑之间的冷却 */
-        private const val SMART_COOLDOWN_MS = 2500L
+        private const val SMART_COOLDOWN_MS = 3000L
 
         /** 由主界面或悬浮球置为 true / false，决定是否自动跳广告 */
         @Volatile
@@ -85,6 +85,7 @@ class AutoSwipeService : AccessibilityService() {
     private var lastScrollAt = 0L
     private var nextSwipeAt = 0L
     private var countdownSeenLastTick = false // 上一秒是否见到“N秒后可继续上滑”倒计时
+    private var promptArmed = true            // 提示信号单次触发：触发后须见到提示消失一次才重新武装
     private var lastPromptToastAt = 0L        // 调试反馈节流：提示“检测到可跳过广告”
 
     private var windowManager: WindowManager? = null
@@ -191,29 +192,35 @@ class AutoSwipeService : AccessibilityService() {
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
             // 智能跳广告：只对广告出手，剧集连播完全不干预。
-            // 主信号：“上滑继续观看短剧/剧集”提示（广告专属文案，剧集页不会出现）。
-            // 注意：广告弹出时底层剧集视图可能仍残留在节点树里，所以主信号
-            // 不做“不在剧集页”否决；“剧集页”判定只用于兜底规则与防误触。
+            // 提示文字“上滑继续观看短剧/剧集”会出现在两处：①广告可划走时（伴随“广告”标识）
+            // ②新一集开头（红果的引导提示，无广告标识）。所以提示必须搭配广告上下文
+            // （“广告”标识在、或刚见过倒计时）才是真广告，且“剧集页”判定只统计可见节点。
+            // 另外：被划走的广告页会作为离屏邻居残留在节点树里，其提示文字仍在——
+            // 因此提示信号是“单次触发”的：触发后必须先见到提示消失一次，才允许再次触发，
+            // 否则冷却期一过就会对残留文字再滑一次（跳到下一集）。
             val scan = scanScreen()
             val adWaitOn = prefs.getBoolean(KEY_AD_WAIT, true)
             val hadCountdown = countdownSeenLastTick
             when {
-                // 主信号：可划走提示已出现（实测剧集页无此文案）
-                scan.promptReady -> {
+                // 真广告结束：提示 + 广告标识/刚见过倒计时，且不在（可见的）剧集页
+                scan.promptReady && promptArmed && (scan.adLabel || hadCountdown) &&
+                    !scan.dramaMarker -> {
                     val now = System.currentTimeMillis()
                     if (now - lastPromptToastAt > 8000) {
                         lastPromptToastAt = now
-                        Toast.makeText(this, "检测到可跳过广告", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, “检测到可跳过广告”, Toast.LENGTH_SHORT).show()
                     }
+                    promptArmed = false
                     swipeAndSchedule()
                 }
-                // 兜底信号：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在，不在剧集页
+                // 兜底：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在，不在剧集页
                 hadCountdown && scan.adSeconds == null &&
                     scan.adLabel && !scan.dramaMarker ->
                     swipeAndSchedule()
                 adWaitOn && scan.adSeconds != null -> Unit   // 倒计时中：等待
                 else -> Unit                                 // 剧集连播中：不干预
             }
+            if (!scan.promptReady) promptArmed = true // 提示消失过一次，重新武装
             countdownSeenLastTick = scan.adSeconds != null
             return
         }
