@@ -312,22 +312,37 @@ class AutoSwipeService : AccessibilityService() {
         val w = dm.widthPixels.toFloat()
         val h = dm.heightPixels.toFloat()
         val path = Path().apply {
-            // 上滑（横屏广告的提示也是“上滑继续观看”），起止点带少量随机
-            moveTo(w * (0.45f + Random.nextFloat() * 0.10f), h * (0.72f + Random.nextFloat() * 0.06f))
-            lineTo(w * (0.45f + Random.nextFloat() * 0.10f), h * (0.26f + Random.nextFloat() * 0.06f))
+            // 上滑（横屏广告的提示也是“上滑继续观看”），快速甩动更容易被翻页组件
+            // 识别为切页（慢拖动可能被互动广告当作游戏内操作吃掉），起止带少量随机
+            moveTo(w * (0.45f + Random.nextFloat() * 0.10f), h * (0.76f + Random.nextFloat() * 0.05f))
+            lineTo(w * (0.45f + Random.nextFloat() * 0.10f), h * (0.22f + Random.nextFloat() * 0.05f))
         }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0L, 300L + Random.nextLong(120)))
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, 160L + Random.nextLong(120)))
             .build()
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 Log.d(TAG, "swipe completed")
+                notifyGestureResult("上滑手势已执行✓")
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 Log.w(TAG, "swipe cancelled")
+                notifyGestureResult("上滑手势被系统取消✗")
             }
         }, null)
+    }
+
+    private var lastGestureToastAt = 0L
+
+    /** 手势执行结果的调试反馈（仅智能跳广告模式下显示，4 秒节流） */
+    private fun notifyGestureResult(msg: String) {
+        if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_SMART_END, true)) return
+        val now = System.currentTimeMillis()
+        if (now - lastGestureToastAt > 4000) {
+            lastGestureToastAt = now
+            handler.post { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
+        }
     }
 
     private fun nextIntervalMillis(): Long {
