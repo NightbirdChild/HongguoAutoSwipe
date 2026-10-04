@@ -6,24 +6,57 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK
+        run: |
+          echo "SDK 目录: $ANDROID_HOME"
+          ls "$ANDROID_HOME" || true
+          if [ -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+            echo "SDK 许可已接受"
+          else
+            echo "镜像未预装 sdkmanager，交给 AGP 按需下载"
+          fi
+
+      - name: Verify project files
+        run: |
+          echo "===== 仓库文件清单 ====="
+          find . -maxdepth 4 -not -path './.git*' | sort
+          echo "========================"
+          missing=0
+          for f in settings.gradle.kts build.gradle.kts gradle.properties \
+                   app/build.gradle.kts \
+                   app/src/main/AndroidManifest.xml \
+                   app/src/main/res/layout/activity_main.xml \
+                   app/src/main/res/values/strings.xml \
+                   app/src/main/res/xml/accessibility_service_config.xml \
+                   app/src/main/java/com/example/hongguoautoswipe/AutoSwipeService.kt \
+                   app/src/main/java/com/example/hongguoautoswipe/MainActivity.kt; do
+            if [ ! -f "$f" ]; then echo "缺少文件: $f"; missing=1; fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "仓库上传不完整：请补传上面列出的缺失文件后重新运行"
+            exit 1
+          fi
+          echo "关键文件齐全，开始构建"
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
 
       - name: Build debug APK
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
