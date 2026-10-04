@@ -29,7 +29,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchOnlyTarget: MaterialSwitch
     private lateinit var switchJitter: MaterialSwitch
     private lateinit var switchOverlay: MaterialSwitch
-    private lateinit var switchAdWait: MaterialSwitch
     private lateinit var switchSmartEnd: MaterialSwitch
     private lateinit var intervalLayout: View
 
@@ -53,7 +52,6 @@ class MainActivity : AppCompatActivity() {
         switchOnlyTarget = findViewById(R.id.switchOnlyTarget)
         switchJitter = findViewById(R.id.switchJitter)
         switchOverlay = findViewById(R.id.switchOverlay)
-        switchAdWait = findViewById(R.id.switchAdWait)
         switchSmartEnd = findViewById(R.id.switchSmartEnd)
         intervalLayout = findViewById(R.id.intervalLayout)
 
@@ -66,7 +64,6 @@ class MainActivity : AppCompatActivity() {
         )
         switchOnlyTarget.isChecked = prefs.getBoolean(AutoSwipeService.KEY_ONLY_TARGET, true)
         switchJitter.isChecked = prefs.getBoolean(AutoSwipeService.KEY_JITTER, true)
-        switchAdWait.isChecked = prefs.getBoolean(AutoSwipeService.KEY_AD_WAIT, true)
         switchSmartEnd.isChecked = prefs.getBoolean(AutoSwipeService.KEY_SMART_END, true)
         switchOverlay.isChecked = prefs.getBoolean(AutoSwipeService.KEY_OVERLAY_WANTED, true)
 
@@ -74,7 +71,6 @@ class MainActivity : AppCompatActivity() {
         editPackage.doAfterTextChanged { saveSettings() }
         switchOnlyTarget.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchJitter.setOnCheckedChangeListener { _, _ -> saveSettings() }
-        switchAdWait.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchSmartEnd.setOnCheckedChangeListener { _, _ ->
             saveSettings()
             updateSmartVisibility()
@@ -191,7 +187,6 @@ class MainActivity : AppCompatActivity() {
             .putString(AutoSwipeService.KEY_TARGET_PACKAGE, pkg)
             .putBoolean(AutoSwipeService.KEY_ONLY_TARGET, switchOnlyTarget.isChecked)
             .putBoolean(AutoSwipeService.KEY_JITTER, switchJitter.isChecked)
-            .putBoolean(AutoSwipeService.KEY_AD_WAIT, switchAdWait.isChecked)
             .putBoolean(AutoSwipeService.KEY_SMART_END, switchSmartEnd.isChecked)
             .apply()
     }

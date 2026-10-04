@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -25,11 +26,13 @@ import kotlin.random.Random
  * 核心服务：红果短剧会自动连播剧集（包括自动播放下一集/下一页广告），
  * 本服务唯一职责：在广告可以划走时自动上滑跳过广告。
  *
- * 主信号（横竖屏通用，实测确认）：广告可划走时屏幕会出现
- * “上滑继续观看短剧”（竖屏底部）/ “上滑继续观看剧集”（横屏右上）提示。
- * 每秒读屏一次：见到该提示且有广告上下文 → 立即上滑（提示为单次触发，
- * 消失一次后重新武装）；“N秒后可继续上滑”倒计时可能是冻结/残留值，
- * 不作为拦截条件；剧集连播中完全不干预。
+ * 判定条件（三者同时满足才上滑，每秒读屏一次）：
+ * 1. 屏幕内出现“上滑继续观看短剧”（竖屏底部）/“上滑继续观看剧集”（横屏右上）提示；
+ * 2. 屏幕内出现“广告”标识；
+ * 3. 当前不是剧集页（无“选集/第N集/全N集”文字）。
+ *
+ * 防误判：被划走的广告页会作为离屏邻居残留在节点树里，但其节点坐标已滑出
+ * 屏幕外——所有文字信号只统计坐标在屏幕范围内的节点，幽灵干扰被彻底排除。
  */
 class AutoSwipeService : AccessibilityService() {
 
@@ -42,15 +45,10 @@ class AutoSwipeService : AccessibilityService() {
         const val KEY_ONLY_TARGET = "only_target"
         const val KEY_TARGET_PACKAGE = "target_package"
         const val KEY_OVERLAY_WANTED = "overlay_wanted"
-        const val KEY_AD_WAIT = "ad_wait"
         const val KEY_SMART_END = "smart_end"
 
         /** 红果短剧（国内版）包名；海外版为 com.phoenix.read.oversea.gp，可在主界面修改 */
         const val DEFAULT_TARGET_PACKAGE = "com.phoenix.read"
-
-        /** 广告倒计时文案特征，如“2秒后可继续上滑观看短剧” */
-        private const val AD_TEXT_1 = "秒后可继续上滑"
-        private const val AD_TEXT_2 = "秒后可继续观看"
 
         /** 广告结束提示（横竖屏通用）：竖屏“上滑继续观看短剧”/横屏“上滑继续观看剧集” */
         private const val AD_PROMPT = "上滑继续观看"
@@ -77,19 +75,17 @@ class AutoSwipeService : AccessibilityService() {
 
     /** 单次读屏的结果 */
     private class ScreenScan {
-        var promptReady = false        // “上滑继续观看…”已出现：广告结束，可划走
-        var adSeconds: Int? = null     // “N秒后可继续上滑”倒计时剩余秒数
-        var adLabel = false            // “广告”标识可见
-        var dramaMarker = false        // “选集/第N集”可见：当前是剧集页
-        var visited = 0                // 本次扫描遍历的节点数（诊断用）
+        var promptReady = false   // “上滑继续观看…”已出现：广告结束，可划走
+        var adLabel = false       // “广告”标识可见
+        var dramaMarker = false   // “选集/第N集”可见：当前是剧集页
+        var visited = 0           // 本次扫描遍历的节点数（诊断用）
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var lastScrollAt = 0L
     private var nextSwipeAt = 0L
-    private var countdownSeenLastTick = false // 上一秒是否见到“N秒后可继续上滑”倒计时
-    private var promptArmed = true            // 提示信号单次触发：触发后须见到提示消失一次才重新武装
-    private var lastPromptToastAt = 0L        // 调试反馈节流：提示“检测到可跳过广告”
+    private var lastPromptToastAt = 0L
+    private var lastGestureToastAt = 0L
 
     private var windowManager: WindowManager? = null
     private var overlayButton: Button? = null
@@ -149,7 +145,7 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 记录最近一次滚动（用户手动滑或上一次自动划走），避免短时间内连续触发
+        // 记录最近一次滚动（用户手动滑或刚划走一个广告），避免短时间内连续触发
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             lastScrollAt = System.currentTimeMillis()
         }
@@ -199,41 +195,16 @@ class AutoSwipeService : AccessibilityService() {
         if (System.currentTimeMillis() - lastScrollAt < 1500) return
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
-            // 智能跳广告：只对广告出手，剧集连播完全不干预。
-            // 提示文字“上滑继续观看短剧/剧集”会出现在两处：①广告可划走时（伴随“广告”标识）
-            // ②新一集开头（红果的引导提示，无广告标识）。所以提示必须搭配广告上下文
-            // （“广告”标识在、或刚见过倒计时）才是真广告，且“剧集页”判定只统计可见节点。
-            // 另外：被划走的广告页会作为离屏邻居残留在节点树里，其提示文字仍在——
-            // 因此提示信号是“单次触发”的：触发后必须先见到提示消失一次，才允许再次触发，
-            // 否则冷却期一过就会对残留文字再滑一次（跳到下一集）。
+            // 智能跳广告：提示 + 广告标识 + 不在剧集页，三者同时满足才上滑
             val scan = scanScreen()
-            val hadCountdown = countdownSeenLastTick
-            when {
-                // 广告可划走：提示 + 广告上下文，且不在（可见的）剧集页。
-                // 注意：不用“倒计时还在”做拦截——倒计时文字可能是冻结/残留值（实测两次
-                // 诊断都停在“2”），会卡成永远等待。提前划若撞上未解锁的倒计时只是
-                // 无效手势，冷却后自动重试，直到划走。
-                scan.promptReady && promptArmed && (scan.adLabel || hadCountdown) &&
-                    !scan.dramaMarker -> {
-                    val now = System.currentTimeMillis()
-                    if (now - lastPromptToastAt > 8000) {
-                        lastPromptToastAt = now
-                        Toast.makeText(this, "检测到可跳过广告", Toast.LENGTH_SHORT).show()
-                    }
-                    promptArmed = false
-                    swipeAndSchedule()
+            if (scan.promptReady && scan.adLabel && !scan.dramaMarker) {
+                val now = System.currentTimeMillis()
+                if (now - lastPromptToastAt > 8000) {
+                    lastPromptToastAt = now
+                    Toast.makeText(this, "检测到可跳过广告", Toast.LENGTH_SHORT).show()
                 }
-                // 兜底：倒计时刚结束（上一秒在、这一秒没了），广告标识还在，不在剧集页
-                hadCountdown && scan.adSeconds == null &&
-                    scan.adLabel && !scan.dramaMarker ->
-                    swipeAndSchedule()
-                else -> Unit                                 // 剧集连播中：不干预
+                swipeAndSchedule()
             }
-            if (!scan.promptReady || scan.dramaMarker || scan.adSeconds != null) {
-                // 提示消失、确认落在剧集页、或新的倒计时出现 → 重新武装
-                promptArmed = true
-            }
-            countdownSeenLastTick = scan.adSeconds != null
             return
         }
 
@@ -243,7 +214,9 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     /**
-     * 遍历当前窗口文字，识别广告的三种信号与剧集页标识。
+     * 遍历当前窗口，识别“上滑继续观看”提示、“广告”标识与剧集页标识。
+     * 只统计坐标在屏幕范围内的可见文字——被划走的广告页残留在节点树里，
+     * 但其节点坐标已滑出屏幕，借此排除幽灵干扰。
      */
     private fun scanScreen(): ScreenScan {
         val res = ScreenScan()
@@ -253,10 +226,13 @@ class AutoSwipeService : AccessibilityService() {
             null
         } ?: return res
 
+        val dm = resources.displayMetrics
+        val screenRect = Rect(0, 0, dm.widthPixels, dm.heightPixels)
+        val bounds = Rect()
         var visited = 0
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-        // 播放页节点很多（弹幕/评论区/选集栏），上限太小会漏掉关键节点，500 → 3000
+        // 播放页节点很多（弹幕/评论区/选集栏），上限太小会漏掉关键节点
         while (queue.isNotEmpty() && visited < 3000) {
             val node = queue.removeFirst()
             visited++
@@ -266,18 +242,15 @@ class AutoSwipeService : AccessibilityService() {
                 node.contentDescription?.let { append(it) }
             }
             if (text.isNotBlank()) {
-                if (!res.promptReady && text.contains(AD_PROMPT)) res.promptReady = true
-                if (res.adSeconds == null &&
-                    (text.contains(AD_TEXT_1) || text.contains(AD_TEXT_2))
-                ) {
-                    res.adSeconds = Regex("\\d+").find(text)?.value?.toIntOrNull()
-                        ?.coerceIn(0, 120) ?: 2
+                node.getBoundsInScreen(bounds)
+                val onScreen = !bounds.isEmpty && Rect.intersects(bounds, screenRect)
+                if (onScreen) {
+                    if (!res.promptReady && text.contains(AD_PROMPT)) res.promptReady = true
+                    if (!res.adLabel && text.contains(AD_LABEL_TEXT)) res.adLabel = true
+                    if (!res.dramaMarker && node.isVisibleToUser &&
+                        (text.contains(DRAMA_MARKER_1) || EPISODE_REGEX.containsMatchIn(text))
+                    ) res.dramaMarker = true
                 }
-                if (!res.adLabel && text.contains(AD_LABEL_TEXT)) res.adLabel = true
-                // 剧集页标识只统计“可见”节点：广告弹出时被盖住的底层剧集视图不算数
-                if (!res.dramaMarker && node.isVisibleToUser &&
-                    (text.contains(DRAMA_MARKER_1) || EPISODE_REGEX.containsMatchIn(text))
-                ) res.dramaMarker = true
             }
 
             for (i in 0 until node.childCount) {
@@ -296,18 +269,6 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     fun performSwipeNow() = performSwipe()
-
-    /** 诊断：把当前读屏结果以弹窗输出，便于远程定位识别问题 */
-    fun diagnose() {
-        val scan = scanScreen()
-        val msg = "运行:${if (swipeOn) "是" else "否"} " +
-            "提示:${if (scan.promptReady) "有" else "无"} " +
-            "广告标识:${if (scan.adLabel) "有" else "无"} " +
-            "倒计时:${scan.adSeconds?.toString() ?: "无"} " +
-            "剧集页:${if (scan.dramaMarker) "是" else "否"} " +
-            "节点:${scan.visited}"
-        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-    }
 
     private fun performSwipe() {
         val dm = resources.displayMetrics
@@ -353,6 +314,17 @@ class AutoSwipeService : AccessibilityService() {
         if (!prefs.getBoolean(KEY_JITTER, true)) return base
         val jitter = (base * 0.15).toLong().coerceAtLeast(500)
         return base + Random.nextLong(-jitter, jitter + 1)
+    }
+
+    /** 诊断：把当前读屏结果以弹窗输出，便于远程定位识别问题 */
+    fun diagnose() {
+        val scan = scanScreen()
+        val msg = "运行:${if (swipeOn) "是" else "否"} " +
+            "提示:${if (scan.promptReady) "有" else "无"} " +
+            "广告标识:${if (scan.adLabel) "有" else "无"} " +
+            "剧集页:${if (scan.dramaMarker) "是" else "否"} " +
+            "节点:${scan.visited}"
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
     }
 
     // ---------- 悬浮球 ----------

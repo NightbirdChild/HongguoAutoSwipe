@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">红果自动翻页</string>
     <string name="service_label">红果自动翻页</string>
-    <string name="service_desc">在红果短剧前台时自动跳过广告：识别到“上滑继续观看”提示或广告倒计时结束后自动上滑划走；剧集自动连播不干预。仅供个人便利使用，请遵守相关应用的使用规则。</string>
+    <string name="service_desc">在红果短剧前台时自动跳过广告：屏幕同时出现“上滑继续观看短剧/剧集”提示和“广告”标识、且不在剧集页时，自动上滑划走；剧集自动连播不干预。仅供个人便利使用，请遵守相关应用的使用规则。</string>
     <string name="btn_accessibility">① 开启无障碍服务</string>
     <string name="btn_overlay_perm">② 授予悬浮窗权限</string>
     <string name="btn_app_details">打开应用信息（小米/红米专项设置）</string>
@@ -12,11 +12,10 @@
     <string name="btn_diagnose">诊断读屏（广告出现时点我，结果会弹窗）</string>
     <string name="hint_interval">翻页间隔（秒，2~600）：关闭“智能跳广告”时使用</string>
     <string name="hint_package">目标应用包名（红果国内版）</string>
-    <string name="switch_smart_end">智能跳广告（推荐）：剧集连播不干预，检测到广告时等“上滑继续观看”提示或倒计时结束后自动划走；关闭则按固定间隔翻页</string>
-    <string name="switch_ad_wait">自动等广告：识别到“N秒后可继续上滑”倒计时时先等待，结束立即翻页</string>
+    <string name="switch_smart_end">智能跳广告（推荐）：屏幕同时出现“上滑继续观看短剧/剧集”提示和“广告”标识、且不在剧集页时自动划走；关闭则按固定间隔翻页</string>
     <string name="switch_only_target">仅当目标应用在前台时才翻页</string>
     <string name="switch_jitter">间隔加一点随机浮动（更自然）</string>
     <string name="switch_overlay">显示悬浮球（点击开始/停止，长按隐藏）</string>
-    <string name="usage_hint">使用方法：① 开启无障碍服务（悬浮球自动出现）→ ② 打开红果短剧，点悬浮球 ▶ 开始。剧集会由红果自动连播，本应用只在出现广告时出手：等“上滑继续观看”提示出现（或“N秒后可继续上滑”倒计时结束）就自动划走广告，横竖屏全屏通用。关闭“智能跳广告”则按下方间隔定时翻页。红果海外版请把包名改为 com.phoenix.read.oversea.gp。</string>
+    <string name="usage_hint">使用方法：① 开启无障碍服务（悬浮球自动出现并自动开始）→ ② 打开红果短剧正常观看。剧集会由红果自动连播，本应用只在屏幕同时出现“上滑继续观看短剧/剧集”提示和“广告”标识、且不在剧集页时，自动上滑划走广告（横竖屏全屏通用）。关闭“智能跳广告”则按下方间隔定时翻页。红果海外版请把包名改为 com.phoenix.read.oversea.gp。</string>
     <string name="disclaimer">本应用仅通过系统无障碍服务模拟手势，不修改、不破解任何应用。自动化操作第三方应用可能违反其用户协议，由此产生的风险请自行评估；请勿用于刷量等违反平台规则的用途。</string>
 </resources>
