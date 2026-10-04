@@ -296,8 +296,6 @@ class AutoSwipeService : AccessibilityService() {
         }, null)
     }
 
-    private var lastGestureToastAt = 0L
-
     /** 手势执行结果的调试反馈（仅智能跳广告模式下显示，4 秒节流） */
     private fun notifyGestureResult(msg: String) {
         if (!getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_SMART_END, true)) return
