@@ -9,10 +9,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
@@ -29,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchOverlay: MaterialSwitch
     private lateinit var switchAdWait: MaterialSwitch
     private lateinit var switchSmartEnd: MaterialSwitch
+    private lateinit var intervalLayout: View
 
     private val handler = Handler(Looper.getMainLooper())
     private val uiRefresher = object : Runnable {
@@ -52,6 +55,7 @@ class MainActivity : AppCompatActivity() {
         switchOverlay = findViewById(R.id.switchOverlay)
         switchAdWait = findViewById(R.id.switchAdWait)
         switchSmartEnd = findViewById(R.id.switchSmartEnd)
+        intervalLayout = findViewById(R.id.intervalLayout)
 
         editInterval.setText(prefs.getInt(AutoSwipeService.KEY_INTERVAL, 20).toString())
         editPackage.setText(
@@ -71,7 +75,10 @@ class MainActivity : AppCompatActivity() {
         switchOnlyTarget.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchJitter.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchAdWait.setOnCheckedChangeListener { _, _ -> saveSettings() }
-        switchSmartEnd.setOnCheckedChangeListener { _, _ -> saveSettings() }
+        switchSmartEnd.setOnCheckedChangeListener { _, _ ->
+            saveSettings()
+            updateSmartVisibility()
+        }
 
         switchOverlay.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(AutoSwipeService.KEY_OVERLAY_WANTED, checked).apply()
@@ -82,12 +89,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 } else {
                     toast("需要悬浮窗权限，请在接下来的页面中允许本应用")
-                    startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
-                        )
-                    )
+                    openOverlayPermissionPage()
                 }
             } else {
                 AutoSwipeService.instance?.hideOverlay()
@@ -96,6 +98,24 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnAccessibility).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        findViewById<Button>(R.id.btnOverlayPerm).setOnClickListener {
+            if (Settings.canDrawOverlays(this)) {
+                AutoSwipeService.instance?.showOverlay()
+                toast("悬浮窗权限已授予")
+            } else {
+                openOverlayPermissionPage()
+            }
+        }
+
+        findViewById<Button>(R.id.btnAppDetails).setOnClickListener {
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")
+                )
+            )
         }
 
         btnToggle.setOnClickListener {
@@ -118,6 +138,8 @@ class MainActivity : AppCompatActivity() {
                 toast("已发送一次上滑手势")
             }
         }
+
+        updateSmartVisibility()
     }
 
     override fun onResume() {
@@ -135,6 +157,22 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(uiRefresher)
     }
 
+    /** 智能跳广告模式下，翻页间隔/随机浮动与定时翻页无关，直接隐藏 */
+    private fun updateSmartVisibility() {
+        val smart = switchSmartEnd.isChecked
+        intervalLayout.isVisible = !smart
+        switchJitter.isVisible = !smart
+    }
+
+    private fun openOverlayPermissionPage() {
+        startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+        )
+    }
+
     private fun saveSettings() {
         val interval = editInterval.text?.toString()?.toIntOrNull()?.coerceIn(2, 600) ?: 20
         val pkg = editPackage.text?.toString()?.trim()
@@ -149,24 +187,35 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
+    private fun installedVersion(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (t: Throwable) {
+        "?"
+    }
+
     @SuppressLint("SetTextI18n")
     private fun updateStatus() {
         val accOn = isAccessibilityServiceEnabled()
-        statusView.text = when {
-            !accOn -> "● 无障碍服务未开启，请点击下方按钮前往开启"
-            !AutoSwipeService.swipeOn -> "● 已停止：点击“开始自动翻页”后打开红果即可"
-            AutoSwipeService.instance?.isTargetForeground() == true ->
-                "● 运行中：目标应用在前台，将按设定间隔自动上滑"
-            else -> "● 运行中：等待目标应用进入前台…"
+        val overlayPerm = Settings.canDrawOverlays(this)
+        statusView.text = buildString {
+            append("● 当前安装版本：v${installedVersion()}\n")
+            append(
+                if (accOn) "● 无障碍服务：已开启\n"
+                else "● 无障碍服务：未开启（点下方按钮开启）\n"
+            )
+            append(
+                if (overlayPerm) "● 悬浮窗权限：已授予"
+                else "● 悬浮窗权限：未授予（点下方按钮授予）"
+            )
+            if (accOn && overlayPerm) {
+                append("\n● 自动跳广告：")
+                append(if (AutoSwipeService.swipeOn) "运行中" else "已停止，点「开始」")
+            }
         }
         statusView.setTextColor(
-            when {
-                !accOn -> 0xFFB71C1C.toInt()
-                !AutoSwipeService.swipeOn -> 0xFF757575.toInt()
-                else -> 0xFF2E7D32.toInt()
-            }
+            if (accOn && overlayPerm) 0xFF2E7D32.toInt() else 0xFFB71C1C.toInt()
         )
-        btnToggle.text = if (AutoSwipeService.swipeOn) "停止自动翻页" else "开始自动翻页"
+        btnToggle.text = if (AutoSwipeService.swipeOn) "停止" else "开始自动跳广告"
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {

@@ -4,6 +4,9 @@
     <string name="service_label">红果自动翻页</string>
     <string name="service_desc">在红果短剧前台时自动跳过广告：识别到“上滑继续观看”提示或广告倒计时结束后自动上滑划走；剧集自动连播不干预。仅供个人便利使用，请遵守相关应用的使用规则。</string>
     <string name="btn_accessibility">① 开启无障碍服务</string>
+    <string name="btn_overlay_perm">② 授予悬浮窗权限</string>
+    <string name="btn_app_details">打开应用信息（小米/红米专项设置）</string>
+    <string name="miui_hint">红米/小米（HyperOS/MIUI）专属提示：悬浮球除了上面第②步，还需在 系统设置 → 应用设置 → 应用管理 → 红果自动翻页 → 权限管理 里打开「显示悬浮窗」，建议同时允许「后台弹出界面」，并把省电策略设为「无限制」，否则悬浮球和无障碍服务会被系统拦截。上面状态区会实时显示每项是否就绪。</string>
     <string name="btn_start">开始自动翻页</string>
     <string name="btn_test">测试一次上滑</string>
     <string name="hint_interval">翻页间隔（秒，2~600）：关闭“智能跳广告”时使用</string>

@@ -90,16 +90,30 @@ class AutoSwipeService : AccessibilityService() {
     private var windowManager: WindowManager? = null
     private var overlayButton: Button? = null
     private var overlayParams: WindowManager.LayoutParams? = null
+    private var tickCount = 0L
 
-    /** 每秒轮询一次读屏 */
+    /** 每秒轮询一次读屏；每 15 秒补一次悬浮球（权限后授的场景） */
     private val loop = object : Runnable {
         override fun run() {
             try {
+                tickCount++
+                maybeRetryOverlay()
                 tick()
             } catch (t: Throwable) {
                 Log.e(TAG, "tick failed", t)
             }
             handler.postDelayed(this, 1000L)
+        }
+    }
+
+    private fun maybeRetryOverlay() {
+        if (tickCount % 15 != 0L) return
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_OVERLAY_WANTED, true) &&
+            Settings.canDrawOverlays(this) &&
+            overlayButton == null
+        ) {
+            showOverlay()
         }
     }
 
