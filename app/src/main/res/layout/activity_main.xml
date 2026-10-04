@@ -50,7 +50,7 @@
 
         <Button
             android:id="@+id/btnAppDetails"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -96,6 +96,7 @@
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchSmartEnd"
+            style="@style/Widget.Material3.CompoundButton.MaterialSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -105,6 +106,7 @@
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchAdWait"
+            style="@style/Widget.Material3.CompoundButton.MaterialSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -114,6 +116,7 @@
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchOnlyTarget"
+            style="@style/Widget.Material3.CompoundButton.MaterialSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -123,6 +126,7 @@
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchJitter"
+            style="@style/Widget.Material3.CompoundButton.MaterialSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -132,6 +136,7 @@
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchOverlay"
+            style="@style/Widget.Material3.CompoundButton.MaterialSwitch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -140,7 +145,7 @@
 
         <Button
             android:id="@+id/btnTest"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"

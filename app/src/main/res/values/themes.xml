@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Hongguo" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <!-- 必须使用 Material3 主题：MaterialSwitch 的滑块样式依赖 materialSwitchStyle，
+         只有 Material3 主题提供了该属性，否则开关会渲染成纯文字（无滑块） -->
+    <style name="Theme.Hongguo" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
-        <item name="colorPrimaryVariant">@color/primary_dark</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorSecondary">@color/primary</item>
-        <item name="colorSecondaryVariant">@color/primary_dark</item>
-        <item name="colorOnSecondary">#FFFFFF</item>
         <item name="android:statusBarColor">@color/primary_dark</item>
     </style>
 </resources>
