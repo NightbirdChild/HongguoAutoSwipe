@@ -25,11 +25,9 @@ import kotlin.random.Random
  * 核心服务：红果短剧会自动连播剧集（包括自动播放下一集/下一页广告），
  * 本服务唯一职责：在广告可以划走时自动上滑跳过广告。
  *
- * 广告识别（每秒读屏一次，横竖屏通用）：
- * 1. 出现“上滑继续观看…”提示 → 广告结束，立即上滑划走；
- * 2. 出现“N秒后可继续上滑”倒计时 → 等待；
- * 3. 只有“广告”标识、无倒计时（且不是剧集页）→ 上滑（若仍被拦截则为无效手势，冷却后重试）；
- * 4. 其他情况 → 完全不干预。
+ * 主信号（横竖屏通用，实测确认）：广告可划走时屏幕会出现
+ * “上滑继续观看短剧”（竖屏底部）/ “上滑继续观看剧集”（横屏右上）提示。
+ * 每秒读屏一次：见到该提示且不在剧集页 → 立即上滑；倒计时中 → 等待；其余 → 不干预。
  */
 class AutoSwipeService : AccessibilityService() {
 
@@ -52,7 +50,7 @@ class AutoSwipeService : AccessibilityService() {
         private const val AD_TEXT_1 = "秒后可继续上滑"
         private const val AD_TEXT_2 = "秒后可继续观看"
 
-        /** 广告结束提示，如“上滑继续观看剧集” */
+        /** 广告结束提示（横竖屏通用）：竖屏“上滑继续观看短剧”/横屏“上滑继续观看剧集” */
         private const val AD_PROMPT = "上滑继续观看"
 
         /** 广告标识文字 */
@@ -192,16 +190,15 @@ class AutoSwipeService : AccessibilityService() {
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
             // 智能跳广告：只对广告出手，剧集连播完全不干预。
-            // 单一文字（“广告”或“上滑继续观看”）不再单独触发——弹幕/提示可能含同样文字，
-            // 必须组合信号同时满足，且当前不在剧集页，才会上滑。
+            // 主信号：“上滑继续观看短剧/剧集”提示（横竖屏广告可划走时都会出现）。
+            // 单一“广告”文字不再单独触发——弹幕可能含同样文字，必须组合信号。
             val scan = scanScreen()
             val adWaitOn = prefs.getBoolean(KEY_AD_WAIT, true)
             val hadCountdown = countdownSeenLastTick
             when {
-                // 组合信号一：“上滑继续观看”提示 + 广告标识/刚见过倒计时，且不在剧集页
-                scan.promptReady && (scan.adLabel || hadCountdown) && !scan.dramaMarker ->
-                    swipeAndSchedule()
-                // 组合信号二：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在
+                // 主信号：可划走提示已出现，且不在剧集页
+                scan.promptReady && !scan.dramaMarker -> swipeAndSchedule()
+                // 兜底信号：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在
                 hadCountdown && scan.adSeconds == null &&
                     scan.adLabel && !scan.dramaMarker ->
                     swipeAndSchedule()
