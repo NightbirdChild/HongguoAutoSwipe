@@ -86,6 +86,7 @@ class AutoSwipeService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var lastScrollAt = 0L
     private var nextSwipeAt = 0L
+    private var countdownSeenLastTick = false // 上一秒是否见到“N秒后可继续上滑”倒计时
 
     private var windowManager: WindowManager? = null
     private var overlayButton: Button? = null
@@ -190,15 +191,24 @@ class AutoSwipeService : AccessibilityService() {
         if (System.currentTimeMillis() - lastScrollAt < 1500) return
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
-            // 智能跳广告：只对广告出手，剧集连播完全不干预
+            // 智能跳广告：只对广告出手，剧集连播完全不干预。
+            // 单一文字（“广告”或“上滑继续观看”）不再单独触发——弹幕/提示可能含同样文字，
+            // 必须组合信号同时满足，且当前不在剧集页，才会上滑。
             val scan = scanScreen()
+            val adWaitOn = prefs.getBoolean(KEY_AD_WAIT, true)
+            val hadCountdown = countdownSeenLastTick
             when {
-                scan.promptReady -> swipeAndSchedule()                    // 广告结束提示：划走
-                !prefs.getBoolean(KEY_AD_WAIT, true) -> Unit              // 用户关闭了等倒计时
-                scan.adSeconds != null -> Unit                            // 倒计时中：等待
-                scan.adLabel && !scan.dramaMarker -> swipeAndSchedule()   // 广告标识在、无倒计时：尝试划走
-                else -> Unit                                              // 剧集连播中：不干预
+                // 组合信号一：“上滑继续观看”提示 + 广告标识/刚见过倒计时，且不在剧集页
+                scan.promptReady && (scan.adLabel || hadCountdown) && !scan.dramaMarker ->
+                    swipeAndSchedule()
+                // 组合信号二：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在
+                hadCountdown && scan.adSeconds == null &&
+                    scan.adLabel && !scan.dramaMarker ->
+                    swipeAndSchedule()
+                adWaitOn && scan.adSeconds != null -> Unit   // 倒计时中：等待
+                else -> Unit                                 // 剧集连播中：不干预
             }
+            countdownSeenLastTick = scan.adSeconds != null
             return
         }
 
