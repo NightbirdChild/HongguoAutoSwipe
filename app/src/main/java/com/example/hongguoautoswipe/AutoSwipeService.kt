@@ -22,9 +22,14 @@ import kotlin.math.abs
 import kotlin.random.Random
 
 /**
- * 核心服务：通过无障碍能力，在目标应用（红果短剧）前台时按设定间隔模拟上滑手势。
- * 自适应逻辑：每秒检查一次屏幕，若识别到广告页的“N秒后可继续上滑”倒计时文案，
- * 则暂停翻页，等倒计时结束后立刻补翻一次；普通页面按设定间隔翻页。
+ * 核心服务：红果短剧会自动连播剧集（包括自动播放下一集/下一页广告），
+ * 本服务唯一职责：在广告可以划走时自动上滑跳过广告。
+ *
+ * 广告识别（每秒读屏一次，横竖屏通用）：
+ * 1. 出现“上滑继续观看…”提示 → 广告结束，立即上滑划走；
+ * 2. 出现“N秒后可继续上滑”倒计时 → 等待；
+ * 3. 只有“广告”标识、无倒计时（且不是剧集页）→ 上滑（若仍被拦截则为无效手势，冷却后重试）；
+ * 4. 其他情况 → 完全不干预。
  */
 class AutoSwipeService : AccessibilityService() {
 
@@ -38,15 +43,29 @@ class AutoSwipeService : AccessibilityService() {
         const val KEY_TARGET_PACKAGE = "target_package"
         const val KEY_OVERLAY_WANTED = "overlay_wanted"
         const val KEY_AD_WAIT = "ad_wait"
+        const val KEY_SMART_END = "smart_end"
 
         /** 红果短剧（国内版）包名；海外版为 com.phoenix.read.oversea.gp，可在主界面修改 */
         const val DEFAULT_TARGET_PACKAGE = "com.phoenix.read"
 
-        /** 广告页底部倒计时文案的特征词，如“2秒后可继续上滑观看短剧” */
+        /** 广告倒计时文案特征，如“2秒后可继续上滑观看短剧” */
         private const val AD_TEXT_1 = "秒后可继续上滑"
         private const val AD_TEXT_2 = "秒后可继续观看"
 
-        /** 由主界面或悬浮球置为 true / false，决定是否自动翻页 */
+        /** 广告结束提示，如“上滑继续观看剧集” */
+        private const val AD_PROMPT = "上滑继续观看"
+
+        /** 广告标识文字 */
+        private const val AD_LABEL_TEXT = "广告"
+
+        /** 剧集页标识（用于排除广告标识误判）：选集栏 / 集数标题 */
+        private const val DRAMA_MARKER_1 = "选集"
+        private val EPISODE_REGEX = Regex("第\\d+集|全\\d+集")
+
+        /** 智能跳广告模式下两次上滑之间的冷却 */
+        private const val SMART_COOLDOWN_MS = 2500L
+
+        /** 由主界面或悬浮球置为 true / false，决定是否自动跳广告 */
         @Volatile
         var swipeOn = false
 
@@ -54,6 +73,14 @@ class AutoSwipeService : AccessibilityService() {
         @Volatile
         var instance: AutoSwipeService? = null
             private set
+    }
+
+    /** 单次读屏的结果 */
+    private class ScreenScan {
+        var promptReady = false        // “上滑继续观看…”已出现：广告结束，可划走
+        var adSeconds: Int? = null     // “N秒后可继续上滑”倒计时剩余秒数
+        var adLabel = false            // “广告”标识可见
+        var dramaMarker = false        // “选集/第N集”可见：当前是剧集页
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -64,7 +91,7 @@ class AutoSwipeService : AccessibilityService() {
     private var overlayButton: Button? = null
     private var overlayParams: WindowManager.LayoutParams? = null
 
-    /** 每秒轮询：检查前台应用 → 识别广告倒计时 → 判断是否到达翻页时间 */
+    /** 每秒轮询一次读屏 */
     private val loop = object : Runnable {
         override fun run() {
             try {
@@ -82,14 +109,24 @@ class AutoSwipeService : AccessibilityService() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         handler.postDelayed(loop, 1000L)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_OVERLAY_WANTED, false) && Settings.canDrawOverlays(this)) {
-            showOverlay()
+        if (prefs.getBoolean(KEY_OVERLAY_WANTED, true)) {
+            if (Settings.canDrawOverlays(this)) {
+                showOverlay()
+            } else {
+                handler.post {
+                    Toast.makeText(
+                        this,
+                        "悬浮球需要“悬浮窗”权限：请打开本应用主界面，打开“显示悬浮球”开关按提示授权",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
         Log.i(TAG, "service connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 记录最近一次滚动（用户手动滑或上一次自动翻页），避免短时间内连翻两页
+        // 记录最近一次滚动（用户手动滑或上一次自动划走），避免短时间内连续触发
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             lastScrollAt = System.currentTimeMillis()
         }
@@ -135,46 +172,75 @@ class AutoSwipeService : AccessibilityService() {
         if (!swipeOn) return
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(KEY_ONLY_TARGET, true) && !isTargetForeground()) return
-        // 1.5 秒内发生过滚动就先等动画结束，防止和手动滑动撞车
+        // 1.5 秒内发生过滚动（用户手动滑或刚划走一个广告）就先等界面稳定
         if (System.currentTimeMillis() - lastScrollAt < 1500) return
-        // 广告页：倒计时文案还在，本轮不动，1 秒后复检；倒计时一消失立即翻页
-        if (prefs.getBoolean(KEY_AD_WAIT, true) && findAdCountdownSeconds() != null) return
-        val now = System.currentTimeMillis()
-        if (now < nextSwipeAt) return
-        performSwipe()
-        nextSwipeAt = now + nextIntervalMillis()
+
+        if (prefs.getBoolean(KEY_SMART_END, true)) {
+            // 智能跳广告：只对广告出手，剧集连播完全不干预
+            val scan = scanScreen()
+            when {
+                scan.promptReady -> swipeAndSchedule()                    // 广告结束提示：划走
+                !prefs.getBoolean(KEY_AD_WAIT, true) -> Unit              // 用户关闭了等倒计时
+                scan.adSeconds != null -> Unit                            // 倒计时中：等待
+                scan.adLabel && !scan.dramaMarker -> swipeAndSchedule()   // 广告标识在、无倒计时：尝试划走
+                else -> Unit                                              // 剧集连播中：不干预
+            }
+            return
+        }
+
+        // 传统定时模式：按间隔盲翻
+        if (System.currentTimeMillis() < nextSwipeAt) return
+        swipeAndSchedule()
     }
 
     /**
-     * 遍历当前窗口的文字，找广告倒计时文案（如“2秒后可继续上滑观看短剧”）。
-     * 找到返回剩余秒数，没找到返回 null。
+     * 遍历当前窗口文字，识别广告的三种信号与剧集页标识。
      */
-    private fun findAdCountdownSeconds(): Int? {
+    private fun scanScreen(): ScreenScan {
+        val res = ScreenScan()
         val root = try {
             rootInActiveWindow
         } catch (t: Throwable) {
             null
-        } ?: return null
+        } ?: return res
 
         var visited = 0
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty() && visited < 400) {
+        while (queue.isNotEmpty() && visited < 500) {
             val node = queue.removeFirst()
             visited++
+
             val text = buildString {
-                node.text?.let { append(it) }
-                node.contentDescription?.let { append(' '); append(it) }
+                node.text?.let { append(it); append(' ') }
+                node.contentDescription?.let { append(it) }
             }
-            if (text.contains(AD_TEXT_1) || text.contains(AD_TEXT_2)) {
-                val seconds = Regex("\\d+").find(text)?.value?.toIntOrNull()
-                return (seconds ?: 2).coerceIn(0, 120)
+            if (text.isNotBlank()) {
+                if (!res.promptReady && text.contains(AD_PROMPT)) res.promptReady = true
+                if (res.adSeconds == null &&
+                    (text.contains(AD_TEXT_1) || text.contains(AD_TEXT_2))
+                ) {
+                    res.adSeconds = Regex("\\d+").find(text)?.value?.toIntOrNull()
+                        ?.coerceIn(0, 120) ?: 2
+                }
+                if (!res.adLabel && text.contains(AD_LABEL_TEXT)) res.adLabel = true
+                if (!res.dramaMarker &&
+                    (text.contains(DRAMA_MARKER_1) || EPISODE_REGEX.containsMatchIn(text))
+                ) res.dramaMarker = true
             }
+
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
             }
         }
-        return null
+        return res
+    }
+
+    private fun swipeAndSchedule() {
+        performSwipe()
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        nextSwipeAt = System.currentTimeMillis() +
+            if (prefs.getBoolean(KEY_SMART_END, true)) SMART_COOLDOWN_MS else nextIntervalMillis()
     }
 
     fun performSwipeNow() = performSwipe()
@@ -184,7 +250,7 @@ class AutoSwipeService : AccessibilityService() {
         val w = dm.widthPixels.toFloat()
         val h = dm.heightPixels.toFloat()
         val path = Path().apply {
-            // 起止点带少量随机，避免每次都精确落在同一位置
+            // 上滑（横屏广告的提示也是“上滑继续观看”），起止点带少量随机
             moveTo(w * (0.45f + Random.nextFloat() * 0.10f), h * (0.72f + Random.nextFloat() * 0.06f))
             lineTo(w * (0.45f + Random.nextFloat() * 0.10f), h * (0.26f + Random.nextFloat() * 0.06f))
         }
@@ -329,6 +395,6 @@ class AutoSwipeService : AccessibilityService() {
     private fun toggleSwipe() {
         swipeOn = !swipeOn
         refreshOverlayText()
-        Toast.makeText(this, if (swipeOn) "开始自动翻页" else "已停止自动翻页", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, if (swipeOn) "开始自动跳广告" else "已停止", Toast.LENGTH_SHORT).show()
     }
 }
