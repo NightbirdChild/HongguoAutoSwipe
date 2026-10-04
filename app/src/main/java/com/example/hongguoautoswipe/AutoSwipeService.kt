@@ -27,7 +27,9 @@ import kotlin.random.Random
  *
  * 主信号（横竖屏通用，实测确认）：广告可划走时屏幕会出现
  * “上滑继续观看短剧”（竖屏底部）/ “上滑继续观看剧集”（横屏右上）提示。
- * 每秒读屏一次：见到该提示且不在剧集页 → 立即上滑；倒计时中 → 等待；其余 → 不干预。
+ * 每秒读屏一次：见到该提示且有广告上下文 → 立即上滑（提示为单次触发，
+ * 消失一次后重新武装）；“N秒后可继续上滑”倒计时可能是冻结/残留值，
+ * 不作为拦截条件；剧集连播中完全不干预。
  */
 class AutoSwipeService : AccessibilityService() {
 
@@ -205,12 +207,12 @@ class AutoSwipeService : AccessibilityService() {
             // 因此提示信号是“单次触发”的：触发后必须先见到提示消失一次，才允许再次触发，
             // 否则冷却期一过就会对残留文字再滑一次（跳到下一集）。
             val scan = scanScreen()
-            val adWaitOn = prefs.getBoolean(KEY_AD_WAIT, true)
             val hadCountdown = countdownSeenLastTick
             when {
-                // 倒计时中：先等待（提示可能提前出现，避免无效的提前上滑）
-                adWaitOn && scan.adSeconds != null -> Unit
-                // 真广告结束：提示 + 广告标识/刚见过倒计时，且不在（可见的）剧集页
+                // 广告可划走：提示 + 广告上下文，且不在（可见的）剧集页。
+                // 注意：不用“倒计时还在”做拦截——倒计时文字可能是冻结/残留值（实测两次
+                // 诊断都停在“2”），会卡成永远等待。提前划若撞上未解锁的倒计时只是
+                // 无效手势，冷却后自动重试，直到划走。
                 scan.promptReady && promptArmed && (scan.adLabel || hadCountdown) &&
                     !scan.dramaMarker -> {
                     val now = System.currentTimeMillis()
@@ -221,7 +223,7 @@ class AutoSwipeService : AccessibilityService() {
                     promptArmed = false
                     swipeAndSchedule()
                 }
-                // 兜底：倒计时刚刚结束（上一秒在、这一秒没了），广告标识还在，不在剧集页
+                // 兜底：倒计时刚结束（上一秒在、这一秒没了），广告标识还在，不在剧集页
                 hadCountdown && scan.adSeconds == null &&
                     scan.adLabel && !scan.dramaMarker ->
                     swipeAndSchedule()
