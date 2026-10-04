@@ -208,7 +208,7 @@ class AutoSwipeService : AccessibilityService() {
                     val now = System.currentTimeMillis()
                     if (now - lastPromptToastAt > 8000) {
                         lastPromptToastAt = now
-                        Toast.makeText(this, “检测到可跳过广告”, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "检测到可跳过广告", Toast.LENGTH_SHORT).show()
                     }
                     promptArmed = false
                     swipeAndSchedule()
