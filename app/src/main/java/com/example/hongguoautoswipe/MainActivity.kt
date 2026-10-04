@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchOnlyTarget: MaterialSwitch
     private lateinit var switchJitter: MaterialSwitch
     private lateinit var switchOverlay: MaterialSwitch
+    private lateinit var switchAdWait: MaterialSwitch
 
     private val handler = Handler(Looper.getMainLooper())
     private val uiRefresher = object : Runnable {
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         switchOnlyTarget = findViewById(R.id.switchOnlyTarget)
         switchJitter = findViewById(R.id.switchJitter)
         switchOverlay = findViewById(R.id.switchOverlay)
+        switchAdWait = findViewById(R.id.switchAdWait)
 
         editInterval.setText(prefs.getInt(AutoSwipeService.KEY_INTERVAL, 20).toString())
         editPackage.setText(
@@ -58,12 +60,14 @@ class MainActivity : AppCompatActivity() {
         )
         switchOnlyTarget.isChecked = prefs.getBoolean(AutoSwipeService.KEY_ONLY_TARGET, true)
         switchJitter.isChecked = prefs.getBoolean(AutoSwipeService.KEY_JITTER, true)
+        switchAdWait.isChecked = prefs.getBoolean(AutoSwipeService.KEY_AD_WAIT, true)
         switchOverlay.isChecked = prefs.getBoolean(AutoSwipeService.KEY_OVERLAY_WANTED, false)
 
         editInterval.doAfterTextChanged { saveSettings() }
         editPackage.doAfterTextChanged { saveSettings() }
         switchOnlyTarget.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchJitter.setOnCheckedChangeListener { _, _ -> saveSettings() }
+        switchAdWait.setOnCheckedChangeListener { _, _ -> saveSettings() }
 
         switchOverlay.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(AutoSwipeService.KEY_OVERLAY_WANTED, checked).apply()
@@ -136,6 +140,7 @@ class MainActivity : AppCompatActivity() {
             .putString(AutoSwipeService.KEY_TARGET_PACKAGE, pkg)
             .putBoolean(AutoSwipeService.KEY_ONLY_TARGET, switchOnlyTarget.isChecked)
             .putBoolean(AutoSwipeService.KEY_JITTER, switchJitter.isChecked)
+            .putBoolean(AutoSwipeService.KEY_AD_WAIT, switchAdWait.isChecked)
             .apply()
     }
 

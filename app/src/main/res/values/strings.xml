@@ -8,6 +8,7 @@
     <string name="btn_test">测试一次上滑</string>
     <string name="hint_interval">翻页间隔（秒，2~600）</string>
     <string name="hint_package">目标应用包名（红果国内版）</string>
+    <string name="switch_ad_wait">自动等广告：识别到“N秒后可继续上滑”倒计时时先等待，结束立即翻页</string>
     <string name="switch_only_target">仅当目标应用在前台时才翻页</string>
     <string name="switch_jitter">间隔加一点随机浮动（更自然）</string>
     <string name="switch_overlay">显示悬浮球（点击开始/停止，长按隐藏）</string>
