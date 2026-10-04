@@ -139,6 +139,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.btnDiagnose).setOnClickListener {
+            val svc = AutoSwipeService.instance
+            if (svc == null) {
+                toast("请先开启无障碍服务")
+            } else {
+                svc.diagnose()
+            }
+        }
+
         updateSmartVisibility()
     }
 

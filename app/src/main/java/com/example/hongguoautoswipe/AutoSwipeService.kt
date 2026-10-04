@@ -79,6 +79,7 @@ class AutoSwipeService : AccessibilityService() {
         var adSeconds: Int? = null     // “N秒后可继续上滑”倒计时剩余秒数
         var adLabel = false            // “广告”标识可见
         var dramaMarker = false        // “选集/第N集”可见：当前是剧集页
+        var visited = 0                // 本次扫描遍历的节点数（诊断用）
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -220,7 +221,10 @@ class AutoSwipeService : AccessibilityService() {
                 adWaitOn && scan.adSeconds != null -> Unit   // 倒计时中：等待
                 else -> Unit                                 // 剧集连播中：不干预
             }
-            if (!scan.promptReady) promptArmed = true // 提示消失过一次，重新武装
+            if (!scan.promptReady || scan.dramaMarker || scan.adSeconds != null) {
+                // 提示消失、确认落在剧集页、或新的倒计时出现 → 重新武装
+                promptArmed = true
+            }
             countdownSeenLastTick = scan.adSeconds != null
             return
         }
@@ -244,7 +248,8 @@ class AutoSwipeService : AccessibilityService() {
         var visited = 0
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty() && visited < 500) {
+        // 播放页节点很多（弹幕/评论区/选集栏），上限太小会漏掉关键节点，500 → 3000
+        while (queue.isNotEmpty() && visited < 3000) {
             val node = queue.removeFirst()
             visited++
 
@@ -271,6 +276,7 @@ class AutoSwipeService : AccessibilityService() {
                 node.getChild(i)?.let { queue.add(it) }
             }
         }
+        res.visited = visited
         return res
     }
 
@@ -282,6 +288,17 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     fun performSwipeNow() = performSwipe()
+
+    /** 诊断：把当前读屏结果以弹窗输出，便于远程定位识别问题 */
+    fun diagnose() {
+        val scan = scanScreen()
+        val msg = "提示:${if (scan.promptReady) "有" else "无"} " +
+            "广告标识:${if (scan.adLabel) "有" else "无"} " +
+            "倒计时:${scan.adSeconds?.toString() ?: "无"} " +
+            "剧集页:${if (scan.dramaMarker) "是" else "否"} " +
+            "节点:${scan.visited}"
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    }
 
     private fun performSwipe() {
         val dm = resources.displayMetrics
