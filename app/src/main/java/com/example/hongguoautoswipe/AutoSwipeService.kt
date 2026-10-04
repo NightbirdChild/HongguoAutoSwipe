@@ -15,7 +15,7 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.GestureDescription
+import android.accessibilityservice.GestureDescription
 import android.widget.Button
 import android.widget.Toast
 import kotlin.math.abs
