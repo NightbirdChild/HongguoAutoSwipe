@@ -26,10 +26,13 @@ import kotlin.random.Random
  * 核心服务：红果短剧会自动连播剧集（包括自动播放下一集/下一页广告），
  * 本服务唯一职责：在广告可以划走时自动上滑跳过广告。
  *
- * 判定条件（三者同时满足才上滑，每秒读屏一次）：
+ * 判定条件（满足即上滑，每秒读屏一次）：
  * 1. 屏幕内出现“上滑继续观看短剧”（竖屏底部）/“上滑继续观看剧集”（横屏右上）提示；
- * 2. 屏幕内出现“广告”标识；
- * 3. 当前不是剧集页（无“选集/第N集/全N集”文字）。
+ * 2. 当前不是剧集页（无“选集/第N集/全N集”文字）。
+ *
+ * 只认“上滑继续观看”这一个提示，不再要求屏幕出现“广告”标识——直播类广告
+ * 没有广告标签，要求它会导致整段直播广告都跳不过去；而该提示只在广告可划走
+ * 时出现，剧集正常播放时不会出现，本身就是足够可靠的信号。
  *
  * 防误判：被划走的广告页会作为离屏邻居残留在节点树里，但其节点坐标已滑出
  * 屏幕外——所有文字信号只统计坐标在屏幕范围内的节点，幽灵干扰被彻底排除。
@@ -53,10 +56,7 @@ class AutoSwipeService : AccessibilityService() {
         /** 广告结束提示（横竖屏通用）：竖屏“上滑继续观看短剧”/横屏“上滑继续观看剧集” */
         private const val AD_PROMPT = "上滑继续观看"
 
-        /** 广告标识文字 */
-        private const val AD_LABEL_TEXT = "广告"
-
-        /** 剧集页标识（用于排除广告标识误判）：选集栏 / 集数标题 */
+        /** 剧集页标识（用于排除误判）：选集栏 / 集数标题 */
         private const val DRAMA_MARKER_1 = "选集"
         private val EPISODE_REGEX = Regex("第\\d+集|全\\d+集")
 
@@ -75,8 +75,7 @@ class AutoSwipeService : AccessibilityService() {
 
     /** 单次读屏的结果 */
     private class ScreenScan {
-        var promptReady = false   // “上滑继续观看…”已出现：广告结束，可划走
-        var adLabel = false       // “广告”标识可见
+        var promptReady = false   // “上滑继续观看…”已出现：广告结束，可划走（唯一的触发信号）
         var dramaMarker = false   // “选集/第N集”可见：当前是剧集页
         var visited = 0           // 本次扫描遍历的节点数（诊断用）
     }
@@ -195,9 +194,10 @@ class AutoSwipeService : AccessibilityService() {
         if (System.currentTimeMillis() - lastScrollAt < 1500) return
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
-            // 智能跳广告：提示 + 广告标识 + 不在剧集页，三者同时满足才上滑
+            // 智能跳广告：出现“上滑继续观看”提示且不在剧集页，即自动上滑。
+            // 不再要求“广告”标识——直播广告没有该标签，要求它会让整段直播跳不过去。
             val scan = scanScreen()
-            if (scan.promptReady && scan.adLabel && !scan.dramaMarker) {
+            if (scan.promptReady && !scan.dramaMarker) {
                 val now = System.currentTimeMillis()
                 if (now - lastPromptToastAt > 8000) {
                     lastPromptToastAt = now
@@ -214,7 +214,7 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     /**
-     * 遍历当前窗口，识别“上滑继续观看”提示、“广告”标识与剧集页标识。
+     * 遍历当前窗口，识别“上滑继续观看”提示与剧集页标识。
      * 只统计坐标在屏幕范围内的可见文字——被划走的广告页残留在节点树里，
      * 但其节点坐标已滑出屏幕，借此排除幽灵干扰。
      */
@@ -246,7 +246,6 @@ class AutoSwipeService : AccessibilityService() {
                 val onScreen = !bounds.isEmpty && Rect.intersects(bounds, screenRect)
                 if (onScreen) {
                     if (!res.promptReady && text.contains(AD_PROMPT)) res.promptReady = true
-                    if (!res.adLabel && text.contains(AD_LABEL_TEXT)) res.adLabel = true
                     if (!res.dramaMarker && node.isVisibleToUser &&
                         (text.contains(DRAMA_MARKER_1) || EPISODE_REGEX.containsMatchIn(text))
                     ) res.dramaMarker = true
@@ -318,8 +317,7 @@ class AutoSwipeService : AccessibilityService() {
     fun diagnose() {
         val scan = scanScreen()
         val msg = "运行:${if (swipeOn) "是" else "否"} " +
-            "提示:${if (scan.promptReady) "有" else "无"} " +
-            "广告标识:${if (scan.adLabel) "有" else "无"} " +
+            "上滑提示:${if (scan.promptReady) "有" else "无"} " +
             "剧集页:${if (scan.dramaMarker) "是" else "否"} " +
             "节点:${scan.visited}"
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
