@@ -14,10 +14,12 @@ import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.Toast
 import kotlin.math.abs
 import kotlin.random.Random
@@ -27,12 +29,12 @@ import kotlin.random.Random
  * 本服务唯一职责：在广告可以划走时自动上滑跳过广告。
  *
  * 判定条件（满足即上滑，每秒读屏一次）：
- * 1. 屏幕内出现“上滑继续观看短剧”（竖屏底部）/“上滑继续观看剧集”（横屏右上）提示；
- * 2. 当前不是剧集页（无“选集/第N集/全N集”文字）。
+ * 屏幕内出现“上滑继续观看短剧”（竖屏底部）/“上滑继续观看剧集”（横屏右上）提示。
  *
- * 只认“上滑继续观看”这一个提示，不再要求屏幕出现“广告”标识——直播类广告
- * 没有广告标签，要求它会导致整段直播广告都跳不过去；而该提示只在广告可划走
- * 时出现，剧集正常播放时不会出现，本身就是足够可靠的信号。
+ * 只认这一个提示：不再要求“广告”标识（直播广告无标签），也不再排除“剧集页”
+ * （视频/直播广告全屏盖在播放页之上时，底层残留的“选集/第N集”字样会把广告
+ * 误判成剧集页、导致不划走）。剧集自动连播，播放页本就不会出现该提示，故只认
+ * 这一个信号既足够又会误划。dramaMarker 仍会扫描，仅用于诊断弹窗显示，不参与判定。
  *
  * 防误判：被划走的广告页会作为离屏邻居残留在节点树里，但其节点坐标已滑出
  * 屏幕外——所有文字信号只统计坐标在屏幕范围内的节点，幽灵干扰被彻底排除。
@@ -87,7 +89,9 @@ class AutoSwipeService : AccessibilityService() {
     private var lastGestureToastAt = 0L
 
     private var windowManager: WindowManager? = null
-    private var overlayButton: Button? = null
+    private var overlayView: View? = null          // 悬浮窗容器（主按钮 + 检测按钮）
+    private var overlayToggleBtn: Button? = null    // 主按钮（▶/⏸ 切换 + 长按隐藏）
+    private var overlayDetectBtn: Button? = null    // 检测按钮（触发诊断读屏）
     private var overlayParams: WindowManager.LayoutParams? = null
     private var tickCount = 0L
 
@@ -110,7 +114,7 @@ class AutoSwipeService : AccessibilityService() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(KEY_OVERLAY_WANTED, true) &&
             Settings.canDrawOverlays(this) &&
-            overlayButton == null
+            overlayView == null
         ) {
             showOverlay()
         }
@@ -194,10 +198,13 @@ class AutoSwipeService : AccessibilityService() {
         if (System.currentTimeMillis() - lastScrollAt < 1500) return
 
         if (prefs.getBoolean(KEY_SMART_END, true)) {
-            // 智能跳广告：出现“上滑继续观看”提示且不在剧集页，即自动上滑。
-            // 不再要求“广告”标识——直播广告没有该标签，要求它会让整段直播跳不过去。
+            // 智能跳广告：只要出现“上滑继续观看”提示就上滑。
+            // 不再要求“广告”标识，也不再排除“剧集页”——视频/直播广告全屏盖在
+            // 剧集播放页之上时，底层常残留“选集/第N集”字样，把广告误判成剧集页
+            // 导致不划走（这正是改版后漏划的根因）。剧集自动连播，播放页本就不会
+            // 出现该上滑提示，所以只认这一个信号不会误划剧集。
             val scan = scanScreen()
-            if (scan.promptReady && !scan.dramaMarker) {
+            if (scan.promptReady) {
                 val now = System.currentTimeMillis()
                 if (now - lastPromptToastAt > 8000) {
                     lastPromptToastAt = now
@@ -214,7 +221,8 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     /**
-     * 遍历当前窗口，识别“上滑继续观看”提示与剧集页标识。
+     * 遍历当前窗口，识别“上滑继续观看”提示（唯一触发信号）与剧集页标识
+     * （仅用于诊断，不参与判定）。
      * 只统计坐标在屏幕范围内的可见文字——被划走的广告页残留在节点树里，
      * 但其节点坐标已滑出屏幕，借此排除幽灵干扰。
      */
@@ -327,12 +335,12 @@ class AutoSwipeService : AccessibilityService() {
 
     fun showOverlay(): Boolean {
         if (!Settings.canDrawOverlays(this)) return false
-        if (overlayButton != null) return true
+        if (overlayView != null) return true
         val wm = windowManager ?: return false
         val density = resources.displayMetrics.density
         val sizePx = (56 * density).toInt()
 
-        val btn = Button(this).apply {
+        val toggleBtn = Button(this).apply {
             text = if (swipeOn) "⏸" else "▶"
             setTextColor(Color.LTGRAY)
             textSize = 18f
@@ -344,6 +352,29 @@ class AutoSwipeService : AccessibilityService() {
                 setStroke((1 * density).toInt(), 0x55FFFFFF)
             }
         }
+
+        val detectBtn = Button(this).apply {
+            text = "检测"
+            setTextColor(Color.LTGRAY)
+            textSize = 13f
+            setMinWidth(sizePx)
+            setMinHeight((40 * density).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 14f * density
+                setColor(0xAA333333.toInt())
+                setStroke((1 * density).toInt(), 0x55FFFFFF)
+            }
+        }
+
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val detectLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = (10 * density).toInt() }
+        detectBtn.layoutParams = detectLp
+        container.addView(toggleBtn)
+        container.addView(detectBtn)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -369,7 +400,8 @@ class AutoSwipeService : AccessibilityService() {
             Toast.makeText(this, "悬浮球已隐藏，可在主界面重新打开", Toast.LENGTH_SHORT).show()
         }
 
-        btn.setOnTouchListener { _, ev ->
+        // 主按钮：点击切换开关、拖动整个悬浮窗、长按隐藏
+        toggleBtn.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downRawX = ev.rawX
@@ -390,9 +422,9 @@ class AutoSwipeService : AccessibilityService() {
                             p.x = startX + (ev.rawX - downRawX).toInt()
                             p.y = startY + (ev.rawY - downRawY).toInt()
                             try {
-                                wm.updateViewLayout(btn, p)
+                                wm.updateViewLayout(overlayView, p)
                             } catch (t: Throwable) {
-                                // 悬浮球可能已被移除
+                                // 悬浮窗可能已被移除
                             }
                         }
                     }
@@ -411,30 +443,46 @@ class AutoSwipeService : AccessibilityService() {
             }
         }
 
+        // 检测按钮：直接触发诊断读屏，不用切回 App
+        detectBtn.setOnTouchListener { _, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> true
+                MotionEvent.ACTION_UP -> {
+                    diagnose()
+                    true
+                }
+                else -> false
+            }
+        }
+
         try {
-            wm.addView(btn, params)
+            wm.addView(container, params)
         } catch (t: Throwable) {
             Log.e(TAG, "add overlay failed", t)
             return false
         }
-        overlayButton = btn
+        overlayView = container
+        overlayToggleBtn = toggleBtn
+        overlayDetectBtn = detectBtn
         overlayParams = params
         return true
     }
 
     fun hideOverlay() {
-        val btn = overlayButton ?: return
+        val v = overlayView ?: return
         try {
-            windowManager?.removeView(btn)
+            windowManager?.removeView(v)
         } catch (t: Throwable) {
-            // 悬浮球可能已被移除
+            // 悬浮窗可能已被移除
         }
-        overlayButton = null
+        overlayView = null
+        overlayToggleBtn = null
+        overlayDetectBtn = null
         overlayParams = null
     }
 
     fun refreshOverlayText() {
-        overlayButton?.let { btn ->
+        overlayToggleBtn?.let { btn ->
             btn.text = if (swipeOn) "⏸" else "▶"
         }
     }
