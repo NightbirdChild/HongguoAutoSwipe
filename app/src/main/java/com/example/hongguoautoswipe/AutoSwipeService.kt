@@ -67,6 +67,10 @@ class AutoSwipeService : AccessibilityService() {
         /** 智能跳广告模式下两次上滑之间的冷却 */
         private const val SMART_COOLDOWN_MS = 3000L
 
+        /** 事件驱动扫描的节流间隔：内容变化事件极频繁（弹幕/进度条），
+         *  两次即时扫描最小间隔，避免无谓地反复遍历节点树 */
+        private const val EVENT_SCAN_THROTTLE_MS = 100L
+
         /** 由主界面或悬浮球置为 true / false，决定是否自动跳广告 */
         @Volatile
         var swipeOn = false
@@ -86,6 +90,7 @@ class AutoSwipeService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var lastScrollAt = 0L
+    private var lastEventScanAt = 0L   // 上次事件触发的即时扫描时间（节流用）
     private var nextSwipeAt = 0L
     private var lastPromptToastAt = 0L
     private var lastGestureToastAt = 0L
@@ -97,7 +102,8 @@ class AutoSwipeService : AccessibilityService() {
     private var overlayParams: WindowManager.LayoutParams? = null
     private var tickCount = 0L
 
-    /** 每秒轮询一次读屏；每 15 秒补一次悬浮球（权限后授的场景） */
+    /** 兜底轮询：界面内容变化由无障碍事件即时触发（见 onAccessibilityEvent），
+     *  这里仅作 500ms 一次的保险，防止极端情况下漏掉事件；每 15 秒补一次悬浮球 */
     private val loop = object : Runnable {
         override fun run() {
             try {
@@ -107,7 +113,7 @@ class AutoSwipeService : AccessibilityService() {
             } catch (t: Throwable) {
                 Log.e(TAG, "tick failed", t)
             }
-            handler.postDelayed(this, 1000L)
+            handler.postDelayed(this, 500L)
         }
     }
 
@@ -128,7 +134,7 @@ class AutoSwipeService : AccessibilityService() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         // 无障碍一连接就自动开始（省去手动点开始；悬浮球/主界面随时可暂停）
         swipeOn = true
-        handler.postDelayed(loop, 1000L)
+        handler.postDelayed(loop, 500L)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(KEY_OVERLAY_WANTED, true)) {
             if (Settings.canDrawOverlays(this)) {
@@ -150,9 +156,22 @@ class AutoSwipeService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val type = event?.eventType ?: return
         // 记录最近一次滚动（用户手动滑或刚划走一个广告），避免短时间内连续触发
-        if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+        if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             lastScrollAt = System.currentTimeMillis()
+            return
+        }
+        // 事件驱动：界面内容变化 / 窗口切换（即“上滑继续观看”提示节点出现）时，
+        // 立即触发一次扫描，做到毫秒级响应；用 100ms 节流避免弹幕/进度条刷屏时反复遍历
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        ) {
+            val now = System.currentTimeMillis()
+            if (now - lastEventScanAt >= EVENT_SCAN_THROTTLE_MS) {
+                lastEventScanAt = now
+                handler.post { tick() }
+            }
         }
     }
 
