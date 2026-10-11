@@ -51,6 +51,8 @@ class AutoSwipeService : AccessibilityService() {
         const val KEY_TARGET_PACKAGE = "target_package"
         const val KEY_OVERLAY_WANTED = "overlay_wanted"
         const val KEY_SMART_END = "smart_end"
+        /** 悬浮窗是否显示“检测”按钮（默认显示） */
+        const val KEY_SHOW_DETECT = "show_detect"
 
         /** 红果短剧（国内版）包名；海外版为 com.phoenix.read.oversea.gp，可在主界面修改 */
         const val DEFAULT_TARGET_PACKAGE = "com.phoenix.read"
@@ -333,6 +335,23 @@ class AutoSwipeService : AccessibilityService() {
 
     // ---------- 悬浮球 ----------
 
+    /** 创建一个矩形圆角、暗色描边的悬浮按钮（主按钮与检测按钮共用外观） */
+    private fun makeOverlayButton(text: String, sizePx: Int, textSize: Float, density: Float): Button {
+        return Button(this).apply {
+            this.text = text
+            setTextColor(Color.LTGRAY)
+            this.textSize = textSize
+            setMinWidth(sizePx)
+            setMinHeight(sizePx)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 14f * density
+                setColor(0xAA222222.toInt())
+                setStroke((1 * density).toInt(), 0x55FFFFFF)
+            }
+        }
+    }
+
     fun showOverlay(): Boolean {
         if (!Settings.canDrawOverlays(this)) return false
         if (overlayView != null) return true
@@ -340,32 +359,11 @@ class AutoSwipeService : AccessibilityService() {
         val density = resources.displayMetrics.density
         val sizePx = (56 * density).toInt()
 
-        val toggleBtn = Button(this).apply {
-            text = if (swipeOn) "⏸" else "▶"
-            setTextColor(Color.LTGRAY)
-            textSize = 18f
-            setMinWidth(sizePx)
-            setMinHeight(sizePx)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xAA222222.toInt())
-                setStroke((1 * density).toInt(), 0x55FFFFFF)
-            }
-        }
-
-        val detectBtn = Button(this).apply {
-            text = "检测"
-            setTextColor(Color.LTGRAY)
-            textSize = 13f
-            setMinWidth(sizePx)
-            setMinHeight((40 * density).toInt())
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = 14f * density
-                setColor(0xAA333333.toInt())
-                setStroke((1 * density).toInt(), 0x55FFFFFF)
-            }
-        }
+        val toggleBtn = makeOverlayButton(if (swipeOn) "⏸" else "▶", sizePx, 18f, density)
+        val detectBtn = makeOverlayButton("检测", (40 * density).toInt(), 13f, density)
+        val showDetect = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getBoolean(KEY_SHOW_DETECT, true)
+        detectBtn.visibility = if (showDetect) View.VISIBLE else View.GONE
 
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val detectLp = LinearLayout.LayoutParams(
@@ -443,17 +441,9 @@ class AutoSwipeService : AccessibilityService() {
             }
         }
 
-        // 检测按钮：直接触发诊断读屏，不用切回 App
-        detectBtn.setOnTouchListener { _, ev ->
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> true
-                MotionEvent.ACTION_UP -> {
-                    diagnose()
-                    true
-                }
-                else -> false
-            }
-        }
+        // 检测按钮：直接触发诊断读屏，不用切回 App。用标准点击，避免某些 ROM 下
+        // FLAG_NOT_FOCUSABLE 窗口的 OnTouchListener 收不到 UP 事件、导致点不动。
+        detectBtn.setOnClickListener { diagnose() }
 
         try {
             wm.addView(container, params)
@@ -485,6 +475,13 @@ class AutoSwipeService : AccessibilityService() {
         overlayToggleBtn?.let { btn ->
             btn.text = if (swipeOn) "⏸" else "▶"
         }
+    }
+
+    /** 根据设置更新悬浮窗“检测”按钮的显隐（App 里切换该开关时调用） */
+    fun refreshDetectVisibility() {
+        val showDetect = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getBoolean(KEY_SHOW_DETECT, true)
+        overlayDetectBtn?.visibility = if (showDetect) View.VISIBLE else View.GONE
     }
 
     private fun toggleSwipe() {

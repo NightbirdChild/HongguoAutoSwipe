@@ -80,19 +80,20 @@
                 android:maxLength="4" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="@string/hint_package">
+            android:layout_marginTop="20dp"
+            android:text="@string/label_package"
+            android:textSize="14sp" />
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editPackage"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text"
-                android:maxLines="1" />
-        </com.google.android.material.textfield.TextInputLayout>
+        <Spinner
+            android:id="@+id/spinnerPackage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:background="@android:drawable/btn_dropdown"
+            android:padding="12dp" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchSmartEnd"
@@ -132,6 +133,15 @@
             android:layout_marginTop="4dp"
             app:showText="false"
             android:text="@string/switch_overlay" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchShowDetect"
+            style="@style/Widget.Material3.CompoundButton.MaterialSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            app:showText="false"
+            android:text="@string/switch_show_detect" />
 
         <Button
             android:id="@+id/btnTest"

@@ -10,7 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -25,11 +28,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusView: TextView
     private lateinit var btnToggle: Button
     private lateinit var editInterval: TextInputEditText
-    private lateinit var editPackage: TextInputEditText
+    private lateinit var spinnerPackage: Spinner
     private lateinit var switchOnlyTarget: MaterialSwitch
     private lateinit var switchJitter: MaterialSwitch
     private lateinit var switchOverlay: MaterialSwitch
     private lateinit var switchSmartEnd: MaterialSwitch
+    private lateinit var switchShowDetect: MaterialSwitch
     private lateinit var intervalLayout: View
 
     private val handler = Handler(Looper.getMainLooper())
@@ -48,32 +52,59 @@ class MainActivity : AppCompatActivity() {
         statusView = findViewById(R.id.statusView)
         btnToggle = findViewById(R.id.btnToggle)
         editInterval = findViewById(R.id.editInterval)
-        editPackage = findViewById(R.id.editPackage)
+        spinnerPackage = findViewById(R.id.spinnerPackage)
         switchOnlyTarget = findViewById(R.id.switchOnlyTarget)
         switchJitter = findViewById(R.id.switchJitter)
         switchOverlay = findViewById(R.id.switchOverlay)
         switchSmartEnd = findViewById(R.id.switchSmartEnd)
+        switchShowDetect = findViewById(R.id.switchShowDetect)
         intervalLayout = findViewById(R.id.intervalLayout)
 
         editInterval.setText(prefs.getInt(AutoSwipeService.KEY_INTERVAL, 20).toString())
-        editPackage.setText(
-            prefs.getString(
-                AutoSwipeService.KEY_TARGET_PACKAGE,
-                AutoSwipeService.DEFAULT_TARGET_PACKAGE
-            )
+
+        // 目标应用包名：只有国内版 / 海外版两种，用下拉选择而不是手输
+        val pkgOptions = arrayOf(
+            "国内版 com.phoenix.read" to "com.phoenix.read",
+            "海外版 com.phoenix.read.oversea.gp" to "com.phoenix.read.oversea.gp"
         )
+        spinnerPackage.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_item, pkgOptions.map { it.first }
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        val curPkg = prefs.getString(
+            AutoSwipeService.KEY_TARGET_PACKAGE, AutoSwipeService.DEFAULT_TARGET_PACKAGE
+        )
+        spinnerPackage.setSelection(
+            pkgOptions.indexOfFirst { it.second.equals(curPkg, true) }.coerceAtLeast(0)
+        )
+        spinnerPackage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>, view: android.view.View?, position: Int, id: Long
+            ) {
+                prefs.edit()
+                    .putString(AutoSwipeService.KEY_TARGET_PACKAGE, pkgOptions[position].second)
+                    .apply()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+
         switchOnlyTarget.isChecked = prefs.getBoolean(AutoSwipeService.KEY_ONLY_TARGET, true)
         switchJitter.isChecked = prefs.getBoolean(AutoSwipeService.KEY_JITTER, true)
         switchSmartEnd.isChecked = prefs.getBoolean(AutoSwipeService.KEY_SMART_END, true)
         switchOverlay.isChecked = prefs.getBoolean(AutoSwipeService.KEY_OVERLAY_WANTED, true)
+        switchShowDetect.isChecked = prefs.getBoolean(AutoSwipeService.KEY_SHOW_DETECT, true)
 
         editInterval.doAfterTextChanged { saveSettings() }
-        editPackage.doAfterTextChanged { saveSettings() }
         switchOnlyTarget.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchJitter.setOnCheckedChangeListener { _, _ -> saveSettings() }
         switchSmartEnd.setOnCheckedChangeListener { _, _ ->
             saveSettings()
             updateSmartVisibility()
+        }
+
+        switchShowDetect.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(AutoSwipeService.KEY_SHOW_DETECT, checked).apply()
+            AutoSwipeService.instance?.refreshDetectVisibility()
         }
 
         switchOverlay.setOnCheckedChangeListener { _, checked ->
@@ -180,11 +211,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveSettings() {
         val interval = editInterval.text?.toString()?.toIntOrNull()?.coerceIn(2, 600) ?: 20
-        val pkg = editPackage.text?.toString()?.trim()
-            ?.takeUnless { it.isEmpty() } ?: AutoSwipeService.DEFAULT_TARGET_PACKAGE
         prefs.edit()
             .putInt(AutoSwipeService.KEY_INTERVAL, interval)
-            .putString(AutoSwipeService.KEY_TARGET_PACKAGE, pkg)
             .putBoolean(AutoSwipeService.KEY_ONLY_TARGET, switchOnlyTarget.isChecked)
             .putBoolean(AutoSwipeService.KEY_JITTER, switchJitter.isChecked)
             .putBoolean(AutoSwipeService.KEY_SMART_END, switchSmartEnd.isChecked)
